@@ -9,6 +9,8 @@
 --     data both readings return the same seven departments, since all twelve
 --     departments hired at least once -- the choice is documented rather than
 --     silently assumed.
+--   * Ties on the hire count are broken by department id so the endpoint is
+--     reproducible; without it the row order would be planner-dependent.
 --   * Hires with a NULL department_id cannot be attributed and are excluded
 --     from both the per-department counts and the mean.
 
@@ -29,4 +31,4 @@ SELECT
 FROM hires AS h
 JOIN departments AS d ON d.id = h.department_id
 WHERE h.hired > (SELECT AVG(hired) FROM hires)
-ORDER BY h.hired DESC;
+ORDER BY h.hired DESC, d.id;
