@@ -107,3 +107,28 @@ def test_unknown_table_is_rejected(client):
     )
 
     assert response.status_code == 404
+
+
+def test_a_malformed_first_row_is_reported_rather_than_skipped(client):
+    csv_bytes = b"not-an-id,Supply Chain\n2,Staff\n"
+
+    body = client.post(
+        "/api/v1/departments/upload-csv",
+        files={"file": ("departments.csv", io.BytesIO(csv_bytes), "text/csv")},
+    ).json()
+
+    assert body["inserted"] == 1
+    assert body["rejected"] == 1
+    assert body["errors"][0]["index"] == 0
+
+
+def test_a_real_header_row_is_skipped(client):
+    csv_bytes = b"id,department\n1,Supply Chain\n"
+
+    body = client.post(
+        "/api/v1/departments/upload-csv",
+        files={"file": ("departments.csv", io.BytesIO(csv_bytes), "text/csv")},
+    ).json()
+
+    assert body["inserted"] == 1
+    assert body["rejected"] == 0

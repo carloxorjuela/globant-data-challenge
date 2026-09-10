@@ -43,6 +43,20 @@ TABLES: dict[str, TableSpec] = {
 IndexedRow = tuple[int, dict[str, Any]]
 
 
+def _is_header(values: list[str], spec: TableSpec) -> bool:
+    """
+    Recognise a header only when it actually names the expected columns.
+
+    The supplied files are headerless, but tolerating one is cheap. What is
+    not cheap is guessing: an earlier version skipped any first row whose id
+    did not look numeric, which meant a genuinely malformed first record
+    disappeared without ever showing up among the rejections.
+    """
+    return [value.strip().lower() for value in values] == [
+        column.lower() for column in spec.columns
+    ]
+
+
 def rows_from_csv(content: bytes, spec: TableSpec) -> tuple[list[IndexedRow], list[RejectedRow]]:
     """
     Turn raw CSV bytes into positional dicts.
@@ -61,8 +75,7 @@ def rows_from_csv(content: bytes, spec: TableSpec) -> tuple[list[IndexedRow], li
         if not values or all(value.strip() == "" for value in values):
             continue
 
-        # The files ship without a header, but tolerate one if present.
-        if index == 0 and not values[0].strip().isdigit():
+        if index == 0 and _is_header(values, spec):
             continue
 
         if len(values) != len(spec.columns):
