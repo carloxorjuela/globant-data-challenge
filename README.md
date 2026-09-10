@@ -1,28 +1,22 @@
 # Globant Data Engineering Coding Challenge
 
-REST API that migrates three legacy tables (`departments`, `jobs`, `hired_employees`)
-into PostgreSQL and exposes the hiring metrics requested by stakeholders.
+A REST API that migrates three legacy tables (`departments`, `jobs`, `hired_employees`)
+into PostgreSQL, plus the two hiring metrics the stakeholders asked for.
 
-| Challenge section | Status |
-| --- | --- |
-| Section 1 — REST API, CSV ingestion, batch transactions of 1–1000 rows | Complete |
-| Section 2 — one endpoint per stakeholder metric | Complete |
-| Bonus — containers | Complete |
-| Bonus — automated tests | Complete (15 integration tests, CI on every push) |
-| Bonus — public cloud | See [Deployment](#deployment) |
+![CI](https://github.com/carloxorjuela/globant-data-challenge/actions/workflows/ci.yml/badge.svg)
 
----
+Both required sections are implemented, along with the three bonus items:
+containers, automated tests and a cloud deployment.
 
-## Quickstart
+## Running it
 
 ```bash
 docker compose up -d --build
 ```
 
-That brings up PostgreSQL 16 and the API. Interactive documentation is served at
-<http://localhost:8000/docs>.
+PostgreSQL 16 and the API come up together. Swagger lives at <http://localhost:8000/docs>.
 
-Load the three historical files:
+To load the historical files:
 
 ```bash
 for table in departments jobs hired_employees; do
@@ -31,51 +25,22 @@ for table in departments jobs hired_employees; do
 done
 ```
 
-Departments and jobs must be loaded before hires, since hires reference them.
+Order matters. Hires reference departments and jobs, so those two go first.
 
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    CSV[Historical CSV files] -->|multipart upload| API
-    APP[Client applications] -->|JSON batch, 1-1000 rows| API
-
-    subgraph API[FastAPI service]
-        V[Pydantic validation]
-        P[Ingestion pipeline]
-        M[Metrics endpoints]
-    end
-
-    V --> P
-    P -->|upsert on primary key| DB[(PostgreSQL)]
-    M -->|parameterised SQL| DB
-    P -.->|per-row rejection report| APP
-```
-
-A single ingestion pipeline serves both entry points: the CSV upload parses
-files into positional rows, the JSON endpoints receive them already structured,
-and from there validation, foreign-key checks, de-duplication and persistence
-are identical. The metrics endpoints execute the statements stored in `sql/`
-verbatim.
-
----
-
-## API
+## Endpoints
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/v1/{table}/upload-csv` | Load a headerless CSV into `departments`, `jobs` or `hired_employees` |
+| `POST` | `/api/v1/{table}/upload-csv` | Load a headerless CSV into any of the three tables |
 | `POST` | `/api/v1/departments/batch` | Insert 1–1000 departments in one transaction |
 | `POST` | `/api/v1/jobs/batch` | Insert 1–1000 jobs in one transaction |
 | `POST` | `/api/v1/hired_employees/batch` | Insert 1–1000 hires in one transaction |
 | `GET` | `/api/v1/metrics/hires-by-quarter?year=2021` | Requirement 1 |
 | `GET` | `/api/v1/metrics/departments-above-mean?year=2021` | Requirement 2 |
-| `GET` | `/api/v1/metrics/data-quality` | Completeness of the migrated hires |
+| `GET` | `/api/v1/metrics/data-quality` | How complete the migrated data actually is |
 | `GET` | `/health` | Liveness and database connectivity |
 
-### Batch insert
+A batch insert looks like this:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/hired_employees/batch \
@@ -90,14 +55,13 @@ curl -X POST http://localhost:8000/api/v1/hired_employees/batch \
 { "received": 1, "inserted": 1, "rejected": 0, "errors": [] }
 ```
 
-A payload of 0 or more than 1000 rows is rejected with `422` before any
-database work happens.
+Anything outside the 1–1000 range comes back as a `422` before the database is touched.
 
 ### Partial success
 
-One bad record never costs the caller the other 999. Rows that fail validation,
-reference a missing department or job, or repeat an id inside the payload are
-reported individually while the rest are committed:
+I did not want one bad record to cost the caller the other 999, so rows that fail
+validation, point at a department or job that does not exist, or repeat an id inside
+the same payload get reported individually while everything else commits:
 
 ```json
 {
@@ -110,15 +74,10 @@ reported individually while the rest are committed:
 }
 ```
 
----
+## The two metrics
 
-## The two required metrics
-
-### 1. Hires per department and job, by quarter
-
-`GET /api/v1/metrics/hires-by-quarter?year=2021` — [`sql/01_hires_by_quarter.sql`](sql/01_hires_by_quarter.sql)
-
-Returns 938 rows for 2021, ordered alphabetically by department and job:
+**Requirement 1** — [`sql/01_hires_by_quarter.sql`](sql/01_hires_by_quarter.sql).
+Returns 938 rows for 2021, sorted alphabetically by department and job:
 
 | department | job | Q1 | Q2 | Q3 | Q4 |
 | --- | --- | --- | --- | --- | --- |
@@ -126,11 +85,8 @@ Returns 938 rows for 2021, ordered alphabetically by department and job:
 | Accounting | Actuary | 0 | 1 | 0 | 0 |
 | Accounting | Analyst Programmer | 0 | 0 | 1 | 0 |
 
-### 2. Departments hiring above the mean
-
-`GET /api/v1/metrics/departments-above-mean?year=2021` — [`sql/02_departments_above_mean.sql`](sql/02_departments_above_mean.sql)
-
-The 2021 mean is 139.17 hires per department; seven departments exceed it:
+**Requirement 2** — [`sql/02_departments_above_mean.sql`](sql/02_departments_above_mean.sql).
+The 2021 mean works out to 139.17 hires per department, and seven clear it:
 
 | id | department | hired |
 | --- | --- | --- |
@@ -142,72 +98,66 @@ The 2021 mean is 139.17 hires per department; seven departments exceed it:
 | 3 | Research and Development | 151 |
 | 9 | Marketing | 143 |
 
----
+Support and Services tie at 204, which is why the query breaks ties on department id.
+Without that the row order would be up to the query planner and the endpoint would not
+be reproducible.
 
-## Data quality findings
+I computed both results straight from the CSV files before writing any code, and the
+endpoints return the same numbers.
 
-The supplied `hired_employees.csv` holds 1,999 rows, 70 of which are incomplete:
+## What the source data actually looks like
 
-| Issue | Rows |
-| --- | --- |
-| Missing name | 19 |
-| Missing hire date | 14 |
-| Missing department | 21 |
-| Missing job | 16 |
-| **Distinct incomplete rows** | **70** |
+This is where most of the design work went.
 
-These rows are migrated, not discarded — silently dropping 3.5% of a migration
-is worse than carrying it with known gaps. `GET /api/v1/metrics/data-quality`
-reports them, and the consequences are explicit:
+`hired_employees.csv` has 1,999 rows and 70 of them are incomplete: 19 with no name,
+14 with no hire date, 21 with no department, 16 with no job. None of the files ship a
+header row, and the hires span two calendar years, not one. There are 1,685 hires in
+2021 and 300 in 2022, so any metric that forgets to filter by year is quietly wrong.
 
-- The quarterly report inner-joins departments and jobs, so it covers 1,659 of
-  the 1,685 hires recorded in 2021. The difference is hires whose department or
-  job is unknown and which therefore cannot be placed in the report.
-- The mean in requirement 2 is computed over the 1,670 hires that carry a
-  department. Including the 15 unattributed 2021 hires would move the mean from
-  139.17 to 140.42 and return the same seven departments.
+I load the incomplete rows rather than dropping them. Throwing away 3.5% of a migration
+because some fields are blank seemed worse than carrying them with known gaps, and
+`GET /api/v1/metrics/data-quality` exists so nobody has to guess how much is missing.
 
-The files also span two calendar years — 1,685 hires in 2021 and 300 in 2022 —
-so every metric filters on an explicit `year` parameter rather than assuming
-the dataset is already scoped.
+That choice has consequences and they should be stated:
 
----
+- The quarterly report inner-joins departments and jobs, so it covers 1,659 of the
+  1,685 hires from 2021. The rest have an unknown department or job and there is
+  nowhere to put them in that report.
+- The mean in requirement 2 comes from the 1,670 hires that do carry a department.
+  Counting the 15 unattributed ones would push it from 139.17 to 140.42 and return the
+  same seven departments either way. I checked, rather than assuming.
 
 ## Design decisions
 
-**PostgreSQL over a warehouse.** The workload is transactional row insertion
-with foreign keys and idempotent replays. BigQuery or Snowflake would be the
-wrong tool here; they belong downstream, once this database feeds analytics.
+I picked PostgreSQL because the work is transactional row insertion with foreign keys
+and repeated replays. A warehouse like BigQuery would be the wrong shape for this; it
+belongs downstream, once this database is feeding analytics.
 
-**Every hire column is nullable except the primary key.** The source data
-proves that completeness cannot be a load-time invariant. Quality is measured
-and reported instead of being enforced by a schema that would reject 70 rows.
+Every column on `hired_employees` is nullable except the primary key. The source data
+proves completeness cannot be a load-time invariant, so quality gets measured and
+reported instead of enforced by a schema that would reject 70 rows.
 
-**Upsert on the primary key.** Re-running a file is a normal operation during a
-migration, so ingestion is idempotent: `ON CONFLICT (id) DO UPDATE`.
+Ingestion upserts on the primary key, because re-running a file is a normal thing to do
+during a migration and it should not blow up the second time.
 
-**Duplicates inside a payload are resolved before the database sees them.**
-PostgreSQL refuses an `ON CONFLICT DO UPDATE` that touches the same row twice
-in one statement, so the last record per id wins and the superseded ones are
-reported rather than dropped silently.
+Two smaller things that took longer to get right than expected:
 
-**Foreign keys are checked in the application, not left to the database.**
-A database-level violation would abort the whole transaction and take the valid
-rows with it. Checking first is what makes partial success possible.
+- PostgreSQL refuses an `ON CONFLICT DO UPDATE` that touches the same row twice in one
+  statement, so duplicate ids inside a payload have to be resolved before they reach the
+  database. The last record wins and the superseded ones are reported.
+- Foreign keys are checked in the application, not left to the database. A constraint
+  violation would roll back the whole transaction and take the valid rows with it, which
+  is exactly what partial success is supposed to prevent.
 
-**SQL lives in files, not in string literals.** `sql/*.sql` is executed
-verbatim, so the SQL a reviewer reads is the SQL that runs.
+The SQL lives in `sql/*.sql` and is executed verbatim, so what a reviewer reads is what
+actually runs. Timestamps are pinned to UTC before `EXTRACT` since the source is ISO-8601
+with a `Z` suffix and quarter boundaries should not depend on a server's timezone.
 
-**Timestamps are pinned to UTC before `EXTRACT`.** The source data is ISO-8601
-with a `Z` suffix; quarter boundaries must not depend on a server's timezone.
+The schema is created from ORM metadata at startup. For three tables that is honest and
+reproducible; a longer-lived system would use Alembic. That is scope I cut on purpose,
+not something I missed.
 
-**The schema is created from ORM metadata at startup.** For a three-table
-challenge this is honest and reproducible. A longer-lived system would move to
-Alembic migrations; that is deliberate scope, not an oversight.
-
----
-
-## Testing
+## Tests
 
 ```bash
 docker compose up -d db
@@ -215,59 +165,46 @@ pip install -r requirements-dev.txt
 TEST_DATABASE_URL=postgresql+psycopg://challenge:challenge@localhost:5432/challenge pytest -q
 ```
 
-Fifteen integration tests run against a real PostgreSQL instance, because the
-metrics depend on `COUNT(*) FILTER` and `ON CONFLICT`, which SQLite does not
-support. Faking that dialect would test a database the service never uses.
+Fifteen integration tests, run against real PostgreSQL. The metrics use
+`COUNT(*) FILTER` and the ingestion uses `ON CONFLICT`, neither of which SQLite has, and
+testing against a dialect the service never uses would prove nothing.
 
-Coverage includes both batch boundaries (1 and 1000 rows), both rejections
-(0 and 1001), idempotent replay, orphaned foreign keys, duplicate ids inside a
-payload, malformed CSV rows, and the year filter that keeps 2022 hires out of a
-2021 report.
-
-CI runs lint and the full suite on every push and pull request.
-
----
+They cover both batch boundaries (1 and 1000), both rejections (0 and 1001), replaying a
+batch, orphaned foreign keys, duplicate ids in one payload, malformed CSV rows, and the
+year filter that keeps 2022 hires out of a 2021 report. CI runs lint and the suite on
+every push.
 
 ## Deployment
 
-The image is stateless, listens on `$PORT` and runs as a non-root user, so it
-deploys to any container runtime. On Google Cloud:
+The image is stateless, listens on `$PORT` and runs as a non-root user, so it goes onto
+any container runtime. On Google Cloud:
 
 ```bash
 gcloud run deploy globant-data-challenge \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-env-vars "DATABASE_URL=${DATABASE_URL}"
+  --set-secrets "DATABASE_URL=globant-database-url:latest"
 ```
 
-Cloud Run scales to zero between requests, which suits a reporting API whose
-traffic is bursty. A managed PostgreSQL instance holds the data.
+Cloud Run scales to zero between requests, which fits a reporting API with bursty
+traffic. The database password goes through Secret Manager rather than sitting in an
+environment variable.
 
-For a production migration the same service would sit behind a landing zone:
-raw files arriving in Cloud Storage, an event triggering ingestion, and the
-rejected-row report persisted for stakeholders rather than only returned in the
-response.
+For a real migration I would put a landing zone in front of this: files arriving in
+Cloud Storage, an event triggering ingestion, and the rejected rows persisted somewhere
+stakeholders can read them instead of only coming back in the HTTP response.
 
----
+## Scale
 
-## Scaling considerations
+2,000 rows fits in a single request, so none of this is stressed by the supplied data.
+The parts that would matter later are already in place: inserts are chunked at 1,000 per
+statement, `hire_datetime`, `department_id` and `job_id` are indexed since that is what
+the reports filter and group on, and both metrics are computed in the database rather
+than pulled into Python. Somewhere past ten million hires I would move to a partitioned
+table or a summary refreshed on ingestion.
 
-The supplied dataset is 2,000 rows and fits comfortably in one request. The
-design still holds as volume grows:
-
-- Ingestion chunks inserts at 1,000 rows per statement, so a large file becomes
-  a sequence of bounded statements instead of one oversized transaction.
-- `hire_datetime`, `department_id` and `job_id` are indexed, which is what the
-  reporting queries filter and group on.
-- Both metrics are computed in the database. Nothing is pulled into Python to
-  be aggregated.
-- Past roughly ten million hires the reporting queries would be better served by
-  a partitioned table or a materialised summary refreshed on ingestion.
-
----
-
-## Repository layout
+## Layout
 
 ```
 app/
@@ -278,7 +215,7 @@ app/
   schemas.py          Request and response contracts
   routers/            HTTP layer: ingestion, metrics
   services/           Ingestion pipeline and metric execution
-sql/                  The reviewable SQL, executed verbatim
+sql/                  The SQL, executed verbatim
 tests/                Integration suite
 data/                 The three source CSV files
 ```
