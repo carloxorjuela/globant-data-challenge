@@ -62,9 +62,8 @@ Anything outside the 1–1000 range comes back as a `422` before the database is
 
 ### Partial success
 
-I did not want one bad record to cost the caller the other 999, so rows that fail
-validation, point at a department or job that does not exist, or repeat an id inside
-the same payload get reported individually while everything else commits:
+Rows that point at a department or job that does not exist, or that repeat an id inside
+the same payload, are reported individually while everything else commits:
 
 ```json
 {
@@ -76,6 +75,15 @@ the same payload get reported individually while everything else commits:
   ]
 }
 ```
+
+There is a line here worth stating precisely, because it is not "any bad row is always
+isolated". The JSON batch endpoints check the payload against a typed schema before the
+service sees it, so a structurally wrong row (a negative id, an unparseable timestamp)
+fails the whole request with a `422` and nothing is written. Only the errors that need
+the database to answer them, an unknown foreign key or a duplicate id inside the
+payload, are resolved per row. The CSV endpoint is more forgiving because a file has no
+schema to fail against as a unit: there, a malformed line is reported next to the rows
+that loaded fine.
 
 ## The two metrics
 
@@ -168,9 +176,10 @@ pip install -r requirements-dev.txt
 TEST_DATABASE_URL=postgresql+psycopg://challenge:challenge@localhost:5432/challenge pytest -q
 ```
 
-Fifteen integration tests, run against real PostgreSQL. The metrics use
-`COUNT(*) FILTER` and the ingestion uses `ON CONFLICT`, neither of which SQLite has, and
-testing against a dialect the service never uses would prove nothing.
+Fifteen integration tests, run against real PostgreSQL. SQLite would be quicker to wire
+up and does support both `COUNT(*) FILTER` and `ON CONFLICT`, so that is not the reason;
+the reason is that upsert conflict semantics, timezone handling and planner behaviour
+are exactly the things I wanted to check against the engine this actually runs on.
 
 They cover both batch boundaries (1 and 1000), both rejections (0 and 1001), replaying a
 batch, orphaned foreign keys, duplicate ids in one payload, malformed CSV rows, and the
@@ -205,12 +214,17 @@ stakeholders can read them instead of only coming back in the HTTP response.
 
 ## Scale
 
-2,000 rows fits in a single request, so none of this is stressed by the supplied data.
-The parts that would matter later are already in place: inserts are chunked at 1,000 per
-statement, `hire_datetime`, `department_id` and `job_id` are indexed since that is what
-the reports filter and group on, and both metrics are computed in the database rather
-than pulled into Python. Somewhere past ten million hires I would move to a partitioned
-table or a summary refreshed on ingestion.
+2,000 rows fits in a single request, so nothing here is under real pressure and I have
+not benchmarked it. What is in place: inserts are chunked at 1,000 rows per statement,
+which bounds statement size but does not split the transaction, since ingestion still
+commits once at the end. Both metrics are computed in the database rather than pulled
+into Python.
+
+Two known limitations I would fix before this saw real volume. The reporting queries
+filter on `EXTRACT(YEAR FROM hire_datetime AT TIME ZONE 'UTC')`, which is not sargable,
+so the index on `hire_datetime` does not help them; a half-open range predicate would.
+And `inserted` in the batch response counts rows written, which includes rows an upsert
+updated rather than created, so it is not a count of new records.
 
 ## Layout
 
