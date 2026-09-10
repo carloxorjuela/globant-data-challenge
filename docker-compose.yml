@@ -19,6 +19,7 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql+psycopg://challenge:challenge@db:5432/challenge
+      API_KEY: ${API_KEY:-local-development-key}
     ports:
       - "${API_PORT:-8000}:8080"
     depends_on:

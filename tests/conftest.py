@@ -26,6 +26,10 @@ TEST_DATABASE_URL = os.getenv(
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["TEST_DATABASE_URL"] = TEST_DATABASE_URL
 
+# Not a secret, and deliberately not the deployed one.
+TEST_API_KEY = "test-key-not-a-real-secret"
+os.environ["API_KEY"] = TEST_API_KEY
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, make_url, text  # noqa: E402
@@ -92,6 +96,16 @@ def session(engine) -> Session:
 
 @pytest.fixture
 def client(session) -> TestClient:
+    """A client authorised to write. Most tests are about behaviour, not access."""
+    app.dependency_overrides[get_db] = lambda: session
+    with TestClient(app, headers={"X-API-Key": TEST_API_KEY}) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def anonymous_client(session) -> TestClient:
+    """A client that sends no key, for the authorisation tests."""
     app.dependency_overrides[get_db] = lambda: session
     with TestClient(app) as test_client:
         yield test_client

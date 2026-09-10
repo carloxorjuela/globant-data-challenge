@@ -5,9 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas import BatchResult, DepartmentBatch, HiredEmployeeBatch, JobBatch
+from app.security import require_api_key
 from app.services.ingestion import TABLES, ingest, rows_from_csv
 
-router = APIRouter(prefix="/api/v1", tags=["ingestion"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["ingestion"],
+    dependencies=[Depends(require_api_key)],
+)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
