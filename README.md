@@ -5,6 +5,9 @@ into PostgreSQL, plus the two hiring metrics the stakeholders asked for.
 
 ![CI](https://github.com/carloxorjuela/globant-data-challenge/actions/workflows/ci.yml/badge.svg)
 
+Running on Cloud Run, loaded with the supplied data:
+**<https://globant-data-challenge-zyesaqqlqq-uc.a.run.app/docs>**
+
 Both required sections are implemented, along with the three bonus items:
 containers, automated tests and a cloud deployment.
 
@@ -187,9 +190,14 @@ gcloud run deploy globant-data-challenge \
   --set-secrets "DATABASE_URL=globant-database-url:latest"
 ```
 
-Cloud Run scales to zero between requests, which fits a reporting API with bursty
-traffic. The database password goes through Secret Manager rather than sitting in an
-environment variable.
+[`deploy/gcp.sh`](deploy/gcp.sh) has the whole sequence, from enabling the APIs to the
+deploy itself. Cloud Run scales to zero between requests, which fits a reporting API
+with bursty traffic. The service runs under a dedicated service account holding two
+permissions and nothing else, and the database password lives in Secret Manager rather
+than in an environment variable.
+
+The deployed instance is loaded with the three supplied files, so the metric endpoints
+return the numbers in this README against real data, not fixtures.
 
 For a real migration I would put a landing zone in front of this: files arriving in
 Cloud Storage, an event triggering ingestion, and the rejected rows persisted somewhere
