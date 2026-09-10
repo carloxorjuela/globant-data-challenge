@@ -24,24 +24,41 @@ To load the historical files:
 ```bash
 for table in departments jobs hired_employees; do
   curl -X POST "http://localhost:8000/api/v1/${table}/upload-csv" \
+       -H "X-API-Key: local-development-key" \
        -F "file=@data/${table}.csv"
 done
 ```
 
 Order matters. Hires reference departments and jobs, so those two go first.
 
+## Authentication
+
+Writing needs a key, reading does not.
+
+The deployed instance is public, so anyone with the link can read every report. That
+same link would also let anyone overwrite the data those reports describe, so the four
+ingestion endpoints sit behind an `X-API-Key` header. The scheme is declared in OpenAPI,
+so on `/docs` there is an **Authorize** button: paste the key and the write endpoints
+work from the browser. The key for the deployed instance is not in this repository and
+is shared separately.
+
+Locally, compose sets a throwaway key (`local-development-key`) so the stack works out
+of the box; export `API_KEY` before `docker compose up` to use your own. It fails closed
+either way: with no key configured the write endpoints refuse rather than falling back
+to open access.
+
 ## Endpoints
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/{table}/upload-csv` | Load a headerless CSV into any of the three tables |
-| `POST` | `/api/v1/departments/batch` | Insert 1–1000 departments in one transaction |
-| `POST` | `/api/v1/jobs/batch` | Insert 1–1000 jobs in one transaction |
-| `POST` | `/api/v1/hired_employees/batch` | Insert 1–1000 hires in one transaction |
-| `GET` | `/api/v1/metrics/hires-by-quarter?year=2021` | Requirement 1 |
-| `GET` | `/api/v1/metrics/departments-above-mean?year=2021` | Requirement 2 |
-| `GET` | `/api/v1/metrics/data-quality` | How complete the migrated data actually is |
-| `GET` | `/health` | Liveness and database connectivity |
+| Method | Endpoint | Purpose | Key |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/{table}/upload-csv` | Load a headerless CSV into any of the three tables | yes |
+| `POST` | `/api/v1/departments/batch` | Insert 1–1000 departments in one transaction | yes |
+| `POST` | `/api/v1/jobs/batch` | Insert 1–1000 jobs in one transaction | yes |
+| `POST` | `/api/v1/hired_employees/batch` | Insert 1–1000 hires in one transaction | yes |
+| `GET` | `/api/v1/metrics/hires-by-quarter?year=2021` | Requirement 1 | no |
+| `GET` | `/api/v1/metrics/departments-above-mean?year=2021` | Requirement 2 | no |
+| `GET` | `/api/v1/metrics/data-quality` | How complete the migrated data actually is | no |
+| `GET` | `/health` | Liveness and database connectivity | no |
 
 A batch insert looks like this:
 
@@ -134,9 +151,11 @@ That choice has consequences and they should be stated:
 - The quarterly report inner-joins departments and jobs, so it covers 1,659 of the
   1,685 hires from 2021. The rest have an unknown department or job and there is
   nowhere to put them in that report.
-- The mean in requirement 2 comes from the 1,670 hires that do carry a department.
-  Counting the 15 unattributed ones would push it from 139.17 to 140.42 and return the
-  same seven departments either way. I checked, rather than assuming.
+- The mean in requirement 2 averages over every department on record, including any
+  that hired nobody that year, which is the literal reading of "for all the departments".
+  Here all twelve hired, so it comes out at 139.17 across the 1,670 attributed hires.
+  Counting the 15 unattributed 2021 hires too would push it to 140.42 and still return
+  the same seven. Both readings were checked rather than assumed.
 
 ## Design decisions
 
@@ -173,10 +192,10 @@ not something I missed.
 ```bash
 docker compose up -d db
 pip install -r requirements-dev.txt
-TEST_DATABASE_URL=postgresql+psycopg://challenge:challenge@localhost:5432/challenge pytest -q
+pytest -q
 ```
 
-Fifteen integration tests, run against real PostgreSQL. SQLite would be quicker to wire
+Twenty-eight integration tests, run against real PostgreSQL. SQLite would be quicker to wire
 up and does support both `COUNT(*) FILTER` and `ON CONFLICT`, so that is not the reason;
 the reason is that upsert conflict semantics, timezone handling and planner behaviour
 are exactly the things I wanted to check against the engine this actually runs on.
@@ -196,7 +215,8 @@ gcloud run deploy globant-data-challenge \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
-  --set-secrets "DATABASE_URL=globant-database-url:latest"
+  --add-cloudsql-instances "$CONNECTION_NAME" \
+  --set-secrets "DATABASE_URL=globant-database-url:latest,API_KEY=globant-api-key:latest"
 ```
 
 [`deploy/gcp.sh`](deploy/gcp.sh) has the whole sequence, from enabling the APIs to the
@@ -220,11 +240,16 @@ which bounds statement size but does not split the transaction, since ingestion 
 commits once at the end. Both metrics are computed in the database rather than pulled
 into Python.
 
-Two known limitations I would fix before this saw real volume. The reporting queries
-filter on `EXTRACT(YEAR FROM hire_datetime AT TIME ZONE 'UTC')`, which is not sargable,
-so the index on `hire_datetime` does not help them; a half-open range predicate would.
-And `inserted` in the batch response counts rows written, which includes rows an upsert
-updated rather than created, so it is not a count of new records.
+The year filter is a half-open range against the bare column rather than
+`EXTRACT(YEAR FROM hire_datetime)`, which matters more than it looks. Wrapping the
+column in a function leaves the planner scanning the whole index and discarding rows
+(`Filter:` in the plan); comparing the column against two bounds turns it into a real
+index condition (`Index Cond:`). At 2,000 rows the planner picks a sequential scan
+either way, so this is about what happens later, not about the supplied data.
+
+One wording caveat worth knowing: `inserted` in the batch response counts rows written,
+which includes rows an upsert updated rather than created. It is not a count of new
+records.
 
 ## Layout
 
@@ -235,8 +260,10 @@ app/
   database.py         Engine, session factory, declarative base
   models.py           ORM models for the three tables
   schemas.py          Request and response contracts
+  security.py         API key guard for the write endpoints
   routers/            HTTP layer: ingestion, metrics
   services/           Ingestion pipeline and metric execution
+deploy/gcp.sh         One-shot provisioning of the GCP side
 sql/                  The SQL, executed verbatim
 tests/                Integration suite
 data/                 The three source CSV files
