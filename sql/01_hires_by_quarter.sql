@@ -3,9 +3,13 @@
 -- ordered alphabetically by department and job.
 --
 -- Notes
---   * hire_datetime is TIMESTAMPTZ. It is pinned to UTC before EXTRACT so the
---     quarter a hire falls into never depends on the server's session
---     timezone; the source files are ISO-8601 with a Z suffix.
+--   * The year filter is a half-open range rather than
+--     EXTRACT(YEAR FROM hire_datetime) = :year. Wrapping the column in a
+--     function hides it from the index on hire_datetime; comparing the bare
+--     column against two bounds does not. Both bounds are built in UTC, which
+--     also keeps the boundary independent of the server's timezone.
+--   * The quarter pivot still uses EXTRACT, but only on rows the range filter
+--     has already selected, so it costs nothing in access path terms.
 --   * The joins are inner on purpose. A hire with no department or no job
 --     cannot be placed in this report, and the historical data contains such
 --     rows. They are excluded here and surfaced by the data-quality endpoint.
@@ -22,7 +26,7 @@ SELECT
 FROM hired_employees AS e
 JOIN departments AS d ON d.id = e.department_id
 JOIN jobs        AS j ON j.id = e.job_id
-WHERE e.hire_datetime IS NOT NULL
-  AND EXTRACT(YEAR FROM e.hire_datetime AT TIME ZONE 'UTC') = :year
+WHERE e.hire_datetime >= make_timestamptz((:year)::int, 1, 1, 0, 0, 0, 'UTC')
+  AND e.hire_datetime <  make_timestamptz((:year)::int + 1, 1, 1, 0, 0, 0, 'UTC')
 GROUP BY d.department, j.job
 ORDER BY d.department, j.job;

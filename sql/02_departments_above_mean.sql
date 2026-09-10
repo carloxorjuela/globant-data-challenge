@@ -12,7 +12,10 @@
 --     returns two. With the supplied data every department hired at least
 --     once, so both readings happen to agree.
 --   * Hires with a NULL department_id cannot be attributed to anyone and are
---     excluded from the counts and from the mean.
+--     excluded from the counts and from the mean. A NULL hire_datetime fails
+--     the range comparison and is excluded the same way.
+--   * The year filter is a half-open range so the index on hire_datetime stays
+--     usable; EXTRACT(YEAR FROM ...) would hide the column behind a function.
 --   * Ties on the hire count are broken by department id so the endpoint is
 --     reproducible; without it the row order would be planner-dependent.
 
@@ -24,8 +27,8 @@ WITH hires AS (
     FROM departments AS d
     LEFT JOIN hired_employees AS e
            ON e.department_id = d.id
-          AND e.hire_datetime IS NOT NULL
-          AND EXTRACT(YEAR FROM e.hire_datetime AT TIME ZONE 'UTC') = :year
+          AND e.hire_datetime >= make_timestamptz((:year)::int, 1, 1, 0, 0, 0, 'UTC')
+          AND e.hire_datetime <  make_timestamptz((:year)::int + 1, 1, 1, 0, 0, 0, 'UTC')
     GROUP BY d.id, d.department
 )
 SELECT
