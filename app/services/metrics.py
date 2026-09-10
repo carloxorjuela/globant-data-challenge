@@ -10,7 +10,7 @@ from pathlib import Path
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.schemas import DepartmentAboveMean, QuarterlyHires
+from app.schemas import DataQualityReport, DepartmentAboveMean, QuarterlyHires
 
 SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
 
@@ -28,3 +28,8 @@ def hires_by_quarter(session: Session, year: int) -> list[QuarterlyHires]:
 def departments_above_mean(session: Session, year: int) -> list[DepartmentAboveMean]:
     rows = session.execute(text(_statement("02_departments_above_mean.sql")), {"year": year})
     return [DepartmentAboveMean(**row._mapping) for row in rows]
+
+
+def data_quality(session: Session) -> DataQualityReport:
+    row = session.execute(text(_statement("03_data_quality.sql"))).one()
+    return DataQualityReport(**row._mapping)

@@ -63,3 +63,21 @@ def test_departments_above_mean_returns_only_those_over_the_average(client, hiri
 
 def test_metrics_reject_an_out_of_range_year(client):
     assert client.get("/api/v1/metrics/hires-by-quarter", params={"year": 1500}).status_code == 422
+
+
+def test_data_quality_counts_incomplete_rows(client, reference_data):
+    rows = [
+        {"id": 1, "name": "Complete", "datetime": "2021-03-01T10:00:00Z", "department_id": 1, "job_id": 1},
+        {"id": 2, "name": None, "datetime": "2021-03-01T10:00:00Z", "department_id": 1, "job_id": 1},
+        {"id": 3, "name": "No date", "datetime": None, "department_id": 1, "job_id": None},
+    ]
+    client.post("/api/v1/hired_employees/batch", json={"rows": rows})
+
+    assert client.get("/api/v1/metrics/data-quality").json() == {
+        "total_rows": 3,
+        "missing_name": 1,
+        "missing_hire_datetime": 1,
+        "missing_department": 0,
+        "missing_job": 1,
+        "incomplete_rows": 2,
+    }

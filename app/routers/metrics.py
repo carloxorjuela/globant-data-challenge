@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas import DepartmentAboveMean, QuarterlyHires
+from app.schemas import DataQualityReport, DepartmentAboveMean, QuarterlyHires
 from app.services import metrics
 
 router = APIRouter(prefix="/api/v1/metrics", tags=["metrics"])
@@ -28,3 +28,12 @@ def hires_by_quarter(year: int = Year, session: Session = Depends(get_db)) -> li
 )
 def departments_above_mean(year: int = Year, session: Session = Depends(get_db)) -> list[DepartmentAboveMean]:
     return metrics.departments_above_mean(session, year)
+
+
+@router.get(
+    "/data-quality",
+    response_model=DataQualityReport,
+    summary="Completeness of the migrated hires",
+)
+def data_quality(session: Session = Depends(get_db)) -> DataQualityReport:
+    return metrics.data_quality(session)

@@ -69,3 +69,14 @@ class DepartmentAboveMean(BaseModel):
     id: int
     department: str
     hired: int
+
+
+class DataQualityReport(BaseModel):
+    """Completeness of the migrated hires."""
+
+    total_rows: int
+    missing_name: int
+    missing_hire_datetime: int
+    missing_department: int
+    missing_job: int
+    incomplete_rows: int
