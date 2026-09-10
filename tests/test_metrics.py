@@ -95,3 +95,25 @@ def test_data_quality_counts_incomplete_rows(client, reference_data):
         "missing_job": 1,
         "incomplete_rows": 2,
     }
+
+
+def test_departments_that_hired_nobody_still_count_towards_the_mean(client, reference_data):
+    client.post("/api/v1/departments/batch", json={"rows": [{"id": 3, "department": "Legal"}]})
+    rows = [
+        _hire(1, department_id=1, job_id=1, quarter=1),
+        _hire(2, department_id=1, job_id=1, quarter=2),
+        _hire(3, department_id=1, job_id=1, quarter=3),
+        _hire(4, department_id=2, job_id=1, quarter=1),
+        _hire(5, department_id=2, job_id=1, quarter=2),
+    ]
+    client.post("/api/v1/hired_employees/batch", json={"rows": rows})
+
+    # Supply Chain 3, Staff 2, Legal 0. Averaging all three gives 1.67 and both
+    # active departments clear it. Averaging only the two that hired would give
+    # 2.5 and quietly drop Staff.
+    body = client.get("/api/v1/metrics/departments-above-mean", params={"year": 2021}).json()
+
+    assert body == [
+        {"id": 1, "department": "Supply Chain", "hired": 3},
+        {"id": 2, "department": "Staff", "hired": 2},
+    ]
