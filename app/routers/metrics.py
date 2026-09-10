@@ -26,7 +26,9 @@ def hires_by_quarter(year: int = Year, session: Session = Depends(get_db)) -> li
     response_model=list[DepartmentAboveMean],
     summary="Departments hiring above the yearly mean",
 )
-def departments_above_mean(year: int = Year, session: Session = Depends(get_db)) -> list[DepartmentAboveMean]:
+def departments_above_mean(
+    year: int = Year, session: Session = Depends(get_db)
+) -> list[DepartmentAboveMean]:
     return metrics.departments_above_mean(session, year)
 
 

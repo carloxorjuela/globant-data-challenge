@@ -47,7 +47,9 @@ async def upload_csv(
     return ingest(session, spec, rows, pre_rejected=malformed)
 
 
-@router.post("/departments/batch", response_model=BatchResult, summary="Insert 1 to 1000 departments")
+@router.post(
+    "/departments/batch", response_model=BatchResult, summary="Insert 1 to 1000 departments"
+)
 def insert_departments(batch: DepartmentBatch, session: Session = Depends(get_db)) -> BatchResult:
     return ingest(session, TABLES["departments"], _indexed(batch))
 
@@ -58,5 +60,7 @@ def insert_jobs(batch: JobBatch, session: Session = Depends(get_db)) -> BatchRes
 
 
 @router.post("/hired_employees/batch", response_model=BatchResult, summary="Insert 1 to 1000 hires")
-def insert_hired_employees(batch: HiredEmployeeBatch, session: Session = Depends(get_db)) -> BatchResult:
+def insert_hired_employees(
+    batch: HiredEmployeeBatch, session: Session = Depends(get_db)
+) -> BatchResult:
     return ingest(session, TABLES["hired_employees"], _indexed(batch))

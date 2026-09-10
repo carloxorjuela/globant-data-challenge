@@ -5,7 +5,9 @@ import pytest
 QUARTER_DATES = {1: "2021-02-10", 2: "2021-05-10", 3: "2021-08-10", 4: "2021-11-10"}
 
 
-def _hire(employee_id: int, department_id: int, job_id: int, quarter: int, year: int = 2021) -> dict:
+def _hire(
+    employee_id: int, department_id: int, job_id: int, quarter: int, year: int = 2021
+) -> dict:
     date = QUARTER_DATES[quarter].replace("2021", str(year))
     return {
         "id": employee_id,
@@ -67,8 +69,20 @@ def test_metrics_reject_an_out_of_range_year(client):
 
 def test_data_quality_counts_incomplete_rows(client, reference_data):
     rows = [
-        {"id": 1, "name": "Complete", "datetime": "2021-03-01T10:00:00Z", "department_id": 1, "job_id": 1},
-        {"id": 2, "name": None, "datetime": "2021-03-01T10:00:00Z", "department_id": 1, "job_id": 1},
+        {
+            "id": 1,
+            "name": "Complete",
+            "datetime": "2021-03-01T10:00:00Z",
+            "department_id": 1,
+            "job_id": 1,
+        },
+        {
+            "id": 2,
+            "name": None,
+            "datetime": "2021-03-01T10:00:00Z",
+            "department_id": 1,
+            "job_id": 1,
+        },
         {"id": 3, "name": "No date", "datetime": None, "department_id": 1, "job_id": None},
     ]
     client.post("/api/v1/hired_employees/batch", json={"rows": rows})

@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is expressed as calls in argument defaults.
+# This is the framework's documented idiom, not the mutable-default bug B008 targets.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -52,11 +52,21 @@ def client(session) -> TestClient:
 @pytest.fixture
 def reference_data(client) -> None:
     """Departments and jobs must exist before hires can reference them."""
-    client.post("/api/v1/departments/batch", json={"rows": [
-        {"id": 1, "department": "Supply Chain"},
-        {"id": 2, "department": "Staff"},
-    ]})
-    client.post("/api/v1/jobs/batch", json={"rows": [
-        {"id": 1, "job": "Recruiter"},
-        {"id": 2, "job": "Manager"},
-    ]})
+    client.post(
+        "/api/v1/departments/batch",
+        json={
+            "rows": [
+                {"id": 1, "department": "Supply Chain"},
+                {"id": 2, "department": "Staff"},
+            ]
+        },
+    )
+    client.post(
+        "/api/v1/jobs/batch",
+        json={
+            "rows": [
+                {"id": 1, "job": "Recruiter"},
+                {"id": 2, "job": "Manager"},
+            ]
+        },
+    )

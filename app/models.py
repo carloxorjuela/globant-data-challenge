@@ -38,10 +38,6 @@ class HiredEmployee(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     name: Mapped[str | None] = mapped_column(String(200))
-    hire_datetime: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), index=True
-    )
-    department_id: Mapped[int | None] = mapped_column(
-        ForeignKey("departments.id"), index=True
-    )
+    hire_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), index=True)

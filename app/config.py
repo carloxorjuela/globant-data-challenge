@@ -8,9 +8,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = (
-        "postgresql+psycopg://challenge:challenge@localhost:5432/challenge"
-    )
+    database_url: str = "postgresql+psycopg://challenge:challenge@localhost:5432/challenge"
 
 
 @lru_cache

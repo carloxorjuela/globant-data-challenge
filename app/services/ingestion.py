@@ -84,7 +84,9 @@ def rows_from_csv(content: bytes, spec: TableSpec) -> tuple[list[IndexedRow], li
     return rows, rejected
 
 
-def _validate(rows: list[IndexedRow], spec: TableSpec) -> tuple[list[tuple[int, BaseModel]], list[RejectedRow]]:
+def _validate(
+    rows: list[IndexedRow], spec: TableSpec
+) -> tuple[list[tuple[int, BaseModel]], list[RejectedRow]]:
     valid: list[tuple[int, BaseModel]] = []
     rejected: list[RejectedRow] = []
 
@@ -126,7 +128,9 @@ def _reject_unknown_references(
 
         if problems:
             rejected.append(
-                RejectedRow(index=index, reason="; ".join(problems), row=record.model_dump(mode="json"))
+                RejectedRow(
+                    index=index, reason="; ".join(problems), row=record.model_dump(mode="json")
+                )
             )
         else:
             valid.append((index, record))
@@ -157,7 +161,10 @@ def _deduplicate(rows: list[tuple[int, BaseModel]]) -> tuple[list[BaseModel], li
             rejected.append(
                 RejectedRow(
                     index=index,
-                    reason=f"duplicate id {record.id} within the payload, superseded by a later row",
+                    reason=(
+                        f"duplicate id {record.id} within the payload, "
+                        "superseded by a later row"
+                    ),
                     row=record.model_dump(mode="json"),
                 )
             )
@@ -165,7 +172,9 @@ def _deduplicate(rows: list[tuple[int, BaseModel]]) -> tuple[list[BaseModel], li
     return kept, rejected
 
 
-def _upsert(session: Session, spec: TableSpec, records: list[BaseModel], chunk_size: int = 1000) -> int:
+def _upsert(
+    session: Session, spec: TableSpec, records: list[BaseModel], chunk_size: int = 1000
+) -> int:
     """Insert records, overwriting any row that already carries the same id."""
     if not records:
         return 0
@@ -185,7 +194,12 @@ def _upsert(session: Session, spec: TableSpec, records: list[BaseModel], chunk_s
     return len(payload)
 
 
-def ingest(session: Session, spec: TableSpec, rows: list[IndexedRow], pre_rejected: list[RejectedRow] | None = None) -> BatchResult:
+def ingest(
+    session: Session,
+    spec: TableSpec,
+    rows: list[IndexedRow],
+    pre_rejected: list[RejectedRow] | None = None,
+) -> BatchResult:
     """Validate, de-duplicate and persist a batch, reporting every rejected row."""
     rejected = list(pre_rejected or [])
 
